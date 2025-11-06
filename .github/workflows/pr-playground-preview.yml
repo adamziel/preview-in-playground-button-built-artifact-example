@@ -8,6 +8,8 @@ jobs:
   build:
     name: Build Plugin Artifact
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to upload assets to releases
     outputs:
       artifact-url: ${{ steps.upload.outputs.url }}
     steps:
