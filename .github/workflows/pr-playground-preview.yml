@@ -95,7 +95,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    uses: WordPress/wordpress-playground/.github/workflows/playground-preview-button.yml@trunk
+    uses: WordPress/wordpress-playground/.github/workflows/playground-preview-button.yml@playground-preview-workflow
     with:
       mode: append-to-description
       blueprint: ${{ needs.create-blueprint.outputs.blueprint }}
