@@ -36,7 +36,7 @@ jobs:
     needs: build
     permissions:
       contents: write
-    uses: /.github/workflows/upload-artifact-to-release.yml@main
+    uses: adamziel/preview-in-playground-button-built-artifact-example/.github/workflows/upload-artifact-to-release.yml@main
     with:
       artifact-path: ${{ needs.build.outputs.artifact-path }}
       pr-number: ${{ github.event.pull_request.number }}
