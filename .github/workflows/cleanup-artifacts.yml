@@ -1,0 +1,105 @@
+name: Clean CI Artifacts
+
+# Run weekly on Sundays at 2am UTC, or manually
+on:
+  schedule:
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Remove artifacts from closed PRs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed to manage release assets
+      pull-requests: read  # Needed to check PR status
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get list of open PRs
+        id: open-prs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get all open PR numbers
+          gh pr list --state open --json number --jq '.[].number' > open-prs.txt
+          echo "Found $(wc -l < open-prs.txt | tr -d ' ') open PRs"
+          cat open-prs.txt
+
+      - name: List and filter artifacts
+        id: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Check if ci-artifacts release exists
+          if ! gh release view ci-artifacts > /dev/null 2>&1; then
+            echo "ci-artifacts release does not exist. Nothing to clean up."
+            echo "delete_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get all assets from the ci-artifacts release
+          gh release view ci-artifacts --json assets --jq '.assets[].name' > all-artifacts.txt || true
+
+          if [ ! -s all-artifacts.txt ]; then
+            echo "No artifacts found in ci-artifacts release."
+            echo "delete_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found $(wc -l < all-artifacts.txt | tr -d ' ') total artifacts"
+
+          # Find artifacts that don't belong to open PRs
+          touch artifacts-to-delete.txt
+          while IFS= read -r artifact; do
+            # Extract PR number from filename (pr-123-abc123.zip -> 123)
+            if [[ $artifact =~ pr-([0-9]+)- ]]; then
+              PR_NUM="${BASH_REMATCH[1]}"
+
+              # Check if this PR is still open
+              if ! grep -q "^$PR_NUM$" open-prs.txt; then
+                echo "$artifact" >> artifacts-to-delete.txt
+                echo "Will delete: $artifact (PR #$PR_NUM is closed)"
+              else
+                echo "Keeping: $artifact (PR #$PR_NUM is open)"
+              fi
+            else
+              echo "Skipping: $artifact (doesn't match PR pattern)"
+            fi
+          done < all-artifacts.txt
+
+          DELETE_COUNT=$(wc -l < artifacts-to-delete.txt | tr -d ' ')
+          echo "Found $DELETE_COUNT artifacts to delete"
+          echo "delete_count=$DELETE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Delete old artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f artifacts-to-delete.txt ] || [ ! -s artifacts-to-delete.txt ]; then
+            echo "No artifacts to delete"
+            exit 0
+          fi
+
+          echo "Deleting artifacts..."
+          while IFS= read -r artifact; do
+            echo "Deleting: $artifact"
+            gh release delete-asset ci-artifacts "$artifact" --yes || echo "Failed to delete $artifact"
+          done < artifacts-to-delete.txt
+
+          echo "Cleanup complete!"
+
+      - name: Summary
+        run: |
+          echo "### Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f artifacts-to-delete.txt ] && [ -s artifacts-to-delete.txt ]; then
+            echo "Deleted ${{ steps.artifacts.outputs.delete_count }} artifact(s):" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            while IFS= read -r artifact; do
+              echo "- $artifact" >> $GITHUB_STEP_SUMMARY
+            done < artifacts-to-delete.txt
+          else
+            echo "No artifacts needed to be deleted." >> $GITHUB_STEP_SUMMARY
+          fi

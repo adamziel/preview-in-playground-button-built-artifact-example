@@ -1,0 +1,101 @@
+name: PR Playground Preview (Built Artifact)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  build:
+    name: Build Plugin Artifact
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Create plugin zip
+        run: |
+          cd dist
+          zip -r ../plugin.zip .
+          cd ..
+
+      - name: Upload to ci-artifacts release
+        id: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Create unique filename for this PR and commit
+          ARTIFACT_NAME="pr-${{ github.event.pull_request.number }}-${{ github.sha }}.zip"
+
+          # Rename the file before uploading
+          mv plugin.zip "$ARTIFACT_NAME"
+
+          # Upload to the ci-artifacts release
+          # Note: The ci-artifacts release must exist before running this workflow
+          # Create it manually first: gh release create ci-artifacts --title "CI Artifacts" --notes "Temporary artifacts for PR previews" --prerelease
+          gh release upload ci-artifacts "$ARTIFACT_NAME" \
+            --repo ${{ github.repository }} \
+            --clobber
+
+          # Get the download URL
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/releases/download/ci-artifacts/$ARTIFACT_NAME"
+          echo "url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
+          echo "Artifact uploaded to: $ARTIFACT_URL"
+
+  create-blueprint:
+    name: Create Playground Blueprint
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      blueprint: ${{ steps.blueprint.outputs.result }}
+    steps:
+      - name: Create blueprint with artifact URL
+        id: blueprint
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const blueprint = {
+              "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+              "preferredVersions": {
+                "php": "8.2",
+                "wp": "latest"
+              },
+              "steps": [
+                {
+                  "step": "installPlugin",
+                  "pluginData": {
+                    "resource": "url",
+                    "url": "${{ needs.build.outputs.artifact-url }}"
+                  },
+                  "options": {
+                    "activate": true
+                  }
+                }
+              ]
+            };
+            return JSON.stringify(blueprint);
+          result-encoding: string
+
+  playground-preview:
+    name: Post Playground Preview Button
+    needs: create-blueprint
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    uses: WordPress/wordpress-playground/.github/workflows/playground-preview-button.yml@trunk
+    with:
+      mode: append-to-description
+      blueprint: ${{ needs.create-blueprint.outputs.blueprint }}

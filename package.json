@@ -1,0 +1,16 @@
+{
+  "name": "preview-in-playground-built-artifact-example",
+  "version": "1.0.0",
+  "description": "Example WordPress plugin demonstrating Preview in Playground button with built artifacts",
+  "scripts": {
+    "build": "node build.js",
+    "prebuild": "rm -rf dist"
+  },
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "playground"
+  ],
+  "author": "Automattic",
+  "license": "GPL-2.0-or-later"
+}
