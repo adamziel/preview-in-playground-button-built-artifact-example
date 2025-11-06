@@ -43,3 +43,4 @@ add_action( 'wp_head', function() {
     echo 'console.log("Build time: ' . esc_js( BUILT_ARTIFACT_DEMO_BUILD_TIME ) . '");';
     echo '</script>';
 } );
+
