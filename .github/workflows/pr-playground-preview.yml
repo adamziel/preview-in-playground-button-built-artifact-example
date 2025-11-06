@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+env:
+  # Number of artifacts to keep per PR (0 = unlimited)
+  # After uploading a new artifact, older artifacts for this PR will be cleaned up
+  ARTIFACTS_TO_KEEP_PER_PR: 2
+
 jobs:
   build:
     name: Build Plugin Artifact
@@ -55,6 +60,56 @@ jobs:
           ARTIFACT_URL="https://github.com/${{ github.repository }}/releases/download/ci-artifacts/$ARTIFACT_NAME"
           echo "url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
           echo "Artifact uploaded to: $ARTIFACT_URL"
+
+      - name: Cleanup old artifacts for this PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ARTIFACTS_TO_KEEP: ${{ env.ARTIFACTS_TO_KEEP_PER_PR }}
+        run: |
+          echo "Cleaning up old artifacts for PR #$PR_NUMBER (keeping $ARTIFACTS_TO_KEEP most recent)"
+
+          # Check if cleanup is enabled
+          if [ "$ARTIFACTS_TO_KEEP" = "0" ]; then
+            echo "ARTIFACTS_TO_KEEP=0, keeping all artifacts for this PR"
+            exit 0
+          fi
+
+          # Get all artifacts for this PR with timestamps
+          gh release view ci-artifacts --json assets \
+            --jq ".assets[] | select(.name | startswith(\"pr-$PR_NUMBER-\")) | \"\(.created_at)|\(.name)\"" \
+            > pr-artifacts.txt || true
+
+          if [ ! -s pr-artifacts.txt ]; then
+            echo "No existing artifacts found for PR #$PR_NUMBER"
+            exit 0
+          fi
+
+          ARTIFACT_COUNT=$(wc -l < pr-artifacts.txt | tr -d ' ')
+          echo "Found $ARTIFACT_COUNT total artifact(s) for PR #$PR_NUMBER"
+
+          # If we have fewer artifacts than the limit, nothing to delete
+          if [ "$ARTIFACT_COUNT" -le "$ARTIFACTS_TO_KEEP" ]; then
+            echo "Artifact count ($ARTIFACT_COUNT) is within limit ($ARTIFACTS_TO_KEEP), no cleanup needed"
+            exit 0
+          fi
+
+          # Sort by timestamp (newest first)
+          sort -r pr-artifacts.txt > pr-artifacts-sorted.txt
+
+          # Process artifacts: keep first N, delete rest
+          CURRENT=0
+          while IFS='|' read -r timestamp artifact; do
+            CURRENT=$((CURRENT + 1))
+            if [ $CURRENT -le $ARTIFACTS_TO_KEEP ]; then
+              echo "Keeping: $artifact (artifact $CURRENT of $ARTIFACTS_TO_KEEP)"
+            else
+              echo "Deleting: $artifact (old artifact #$CURRENT)"
+              gh release delete-asset ci-artifacts "$artifact" --yes || echo "Failed to delete $artifact"
+            fi
+          done < pr-artifacts-sorted.txt
+
+          echo "Cleanup complete for PR #$PR_NUMBER"
 
   create-blueprint:
     name: Create Playground Blueprint

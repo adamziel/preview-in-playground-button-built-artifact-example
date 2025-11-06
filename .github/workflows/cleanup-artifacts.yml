@@ -5,6 +5,12 @@ on:
   schedule:
     - cron: '0 2 * * 0'
   workflow_dispatch:
+    inputs:
+      artifacts-to-keep:
+        description: 'Number of most recent artifacts to keep per open PR (0 = unlimited)'
+        required: false
+        default: '1'
+        type: string
 
 jobs:
   cleanup:
@@ -31,6 +37,7 @@ jobs:
         id: artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          ARTIFACTS_TO_KEEP: ${{ inputs.artifacts-to-keep || '1' }}
         run: |
           # Check if ci-artifacts release exists
           if ! gh release view ci-artifacts > /dev/null 2>&1; then
@@ -50,57 +57,71 @@ jobs:
           fi
 
           echo "Found $(wc -l < all-artifacts.txt | tr -d ' ') total artifacts"
+          echo "Keeping $ARTIFACTS_TO_KEEP most recent artifact(s) per open PR"
 
-          # Process artifacts
+          # Create temp directory for per-PR artifact lists
+          mkdir -p pr-artifacts
           touch artifacts-to-delete.txt
-          declare -A latest_artifact  # Track latest artifact per PR
 
-          # First pass: identify latest artifact for each open PR
-          while IFS='|' read -r artifact created_at; do
-            if [[ $artifact =~ pr-([0-9]+)- ]]; then
-              PR_NUM="${BASH_REMATCH[1]}"
-
-              # Check if this PR is open
-              if grep -q "^$PR_NUM$" open-prs.txt; then
-                # Track latest artifact for this PR (by timestamp)
-                current_latest="${latest_artifact[$PR_NUM]}"
-                if [ -z "$current_latest" ]; then
-                  latest_artifact[$PR_NUM]="$artifact|$created_at"
-                else
-                  current_time="${current_latest#*|}"
-                  if [[ "$created_at" > "$current_time" ]]; then
-                    latest_artifact[$PR_NUM]="$artifact|$created_at"
-                  fi
-                fi
-              fi
-            fi
-          done < all-artifacts.txt
-
-          # Second pass: mark artifacts for deletion
+          # Group artifacts by PR number
           while IFS='|' read -r artifact created_at; do
             if [[ $artifact =~ pr-([0-9]+)- ]]; then
               PR_NUM="${BASH_REMATCH[1]}"
 
               # Check if this PR is closed
               if ! grep -q "^$PR_NUM$" open-prs.txt; then
+                # Closed PR - delete all artifacts
                 echo "$artifact" >> artifacts-to-delete.txt
                 echo "Will delete: $artifact (PR #$PR_NUM is closed)"
               else
-                # PR is open - check if this is the latest artifact
-                latest="${latest_artifact[$PR_NUM]}"
-                latest_name="${latest%%|*}"
-
-                if [ "$artifact" != "$latest_name" ]; then
-                  echo "$artifact" >> artifacts-to-delete.txt
-                  echo "Will delete: $artifact (PR #$PR_NUM is open, but newer artifact exists: $latest_name)"
-                else
-                  echo "Keeping: $artifact (PR #$PR_NUM is open, latest artifact)"
-                fi
+                # Open PR - collect artifacts for later processing
+                # Store as "timestamp|artifact" for sorting
+                echo "$created_at|$artifact" >> "pr-artifacts/pr-$PR_NUM.txt"
               fi
             else
               echo "Skipping: $artifact (doesn't match PR pattern)"
             fi
           done < all-artifacts.txt
+
+          # Process each open PR's artifacts
+          if [ "$ARTIFACTS_TO_KEEP" != "0" ]; then
+            for pr_file in pr-artifacts/pr-*.txt; do
+              if [ -f "$pr_file" ]; then
+                PR_NUM=$(basename "$pr_file" .txt | sed 's/pr-//')
+
+                # Sort by timestamp (newest first) and process
+                # The -r flag sorts in reverse order, so ISO 8601 timestamps
+                # will be sorted with newest (2025-01-06...) at top, oldest at bottom
+                sort -r "$pr_file" > "${pr_file}.sorted"
+
+                # Count artifacts for this PR
+                ARTIFACT_COUNT=$(wc -l < "${pr_file}.sorted" | tr -d ' ')
+                echo "PR #$PR_NUM has $ARTIFACT_COUNT artifact(s)"
+
+                # Keep the first N (most recent), delete the rest
+                CURRENT=0
+                while IFS='|' read -r timestamp artifact; do
+                  CURRENT=$((CURRENT + 1))
+                  if [ $CURRENT -le $ARTIFACTS_TO_KEEP ]; then
+                    echo "Keeping: $artifact (PR #$PR_NUM, artifact $CURRENT of $ARTIFACTS_TO_KEEP to keep)"
+                  else
+                    echo "$artifact" >> artifacts-to-delete.txt
+                    echo "Will delete: $artifact (PR #$PR_NUM, older artifact #$CURRENT)"
+                  fi
+                done < "${pr_file}.sorted"
+              fi
+            done
+          else
+            echo "ARTIFACTS_TO_KEEP=0, keeping all artifacts from open PRs"
+            # Just list what we're keeping
+            for pr_file in pr-artifacts/pr-*.txt; do
+              if [ -f "$pr_file" ]; then
+                PR_NUM=$(basename "$pr_file" .txt | sed 's/pr-//')
+                ARTIFACT_COUNT=$(wc -l < "$pr_file" | tr -d ' ')
+                echo "Keeping all $ARTIFACT_COUNT artifact(s) for PR #$PR_NUM"
+              fi
+            done
+          fi
 
           DELETE_COUNT=$(wc -l < artifacts-to-delete.txt | tr -d ' ')
           echo "Found $DELETE_COUNT artifacts to delete"
@@ -124,14 +145,18 @@ jobs:
           echo "Cleanup complete!"
 
       - name: Summary
+        env:
+          ARTIFACTS_TO_KEEP: ${{ inputs.artifacts-to-keep || '1' }}
         run: |
           echo "### Cleanup Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configuration:** Keeping $ARTIFACTS_TO_KEEP most recent artifact(s) per open PR" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f artifacts-to-delete.txt ] && [ -s artifacts-to-delete.txt ]; then
-            echo "Deleted ${{ steps.artifacts.outputs.delete_count }} artifact(s):" >> $GITHUB_STEP_SUMMARY
+            echo "**Deleted ${{ steps.artifacts.outputs.delete_count }} artifact(s):**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             while IFS= read -r artifact; do
-              echo "- $artifact" >> $GITHUB_STEP_SUMMARY
+              echo "- \`$artifact\`" >> $GITHUB_STEP_SUMMARY
             done < artifacts-to-delete.txt
           else
             echo "No artifacts needed to be deleted." >> $GITHUB_STEP_SUMMARY
