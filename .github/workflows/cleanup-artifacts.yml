@@ -8,7 +8,7 @@ on:
 
 jobs:
   cleanup:
-    name: Remove artifacts from closed PRs
+    name: Remove old artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed to manage release assets
@@ -39,8 +39,9 @@ jobs:
             exit 0
           fi
 
-          # Get all assets from the ci-artifacts release
-          gh release view ci-artifacts --json assets --jq '.assets[].name' > all-artifacts.txt || true
+          # Get all assets with timestamps from the ci-artifacts release
+          gh release view ci-artifacts --json assets \
+            --jq '.assets[] | "\(.name)|\(.created_at)"' > all-artifacts.txt || true
 
           if [ ! -s all-artifacts.txt ]; then
             echo "No artifacts found in ci-artifacts release."
@@ -50,19 +51,51 @@ jobs:
 
           echo "Found $(wc -l < all-artifacts.txt | tr -d ' ') total artifacts"
 
-          # Find artifacts that don't belong to open PRs
+          # Process artifacts
           touch artifacts-to-delete.txt
-          while IFS= read -r artifact; do
-            # Extract PR number from filename (pr-123-abc123.zip -> 123)
+          declare -A latest_artifact  # Track latest artifact per PR
+
+          # First pass: identify latest artifact for each open PR
+          while IFS='|' read -r artifact created_at; do
             if [[ $artifact =~ pr-([0-9]+)- ]]; then
               PR_NUM="${BASH_REMATCH[1]}"
 
-              # Check if this PR is still open
+              # Check if this PR is open
+              if grep -q "^$PR_NUM$" open-prs.txt; then
+                # Track latest artifact for this PR (by timestamp)
+                current_latest="${latest_artifact[$PR_NUM]}"
+                if [ -z "$current_latest" ]; then
+                  latest_artifact[$PR_NUM]="$artifact|$created_at"
+                else
+                  current_time="${current_latest#*|}"
+                  if [[ "$created_at" > "$current_time" ]]; then
+                    latest_artifact[$PR_NUM]="$artifact|$created_at"
+                  fi
+                fi
+              fi
+            fi
+          done < all-artifacts.txt
+
+          # Second pass: mark artifacts for deletion
+          while IFS='|' read -r artifact created_at; do
+            if [[ $artifact =~ pr-([0-9]+)- ]]; then
+              PR_NUM="${BASH_REMATCH[1]}"
+
+              # Check if this PR is closed
               if ! grep -q "^$PR_NUM$" open-prs.txt; then
                 echo "$artifact" >> artifacts-to-delete.txt
                 echo "Will delete: $artifact (PR #$PR_NUM is closed)"
               else
-                echo "Keeping: $artifact (PR #$PR_NUM is open)"
+                # PR is open - check if this is the latest artifact
+                latest="${latest_artifact[$PR_NUM]}"
+                latest_name="${latest%%|*}"
+
+                if [ "$artifact" != "$latest_name" ]; then
+                  echo "$artifact" >> artifacts-to-delete.txt
+                  echo "Will delete: $artifact (PR #$PR_NUM is open, but newer artifact exists: $latest_name)"
+                else
+                  echo "Keeping: $artifact (PR #$PR_NUM is open, latest artifact)"
+                fi
               fi
             else
               echo "Skipping: $artifact (doesn't match PR pattern)"
