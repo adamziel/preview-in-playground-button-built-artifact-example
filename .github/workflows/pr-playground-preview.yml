@@ -30,18 +30,18 @@ jobs:
       - name: Upload build artifact for next job
         uses: actions/upload-artifact@v4
         with:
-          name: built-plugin
+          name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
           path: plugin.zip
           retention-days: 1
 
-  upload-artifact:
-    name: Upload Artifact with Cleanup
+  expose-build-artifact-publicly:
+    name: Expose Built Artifact on a Public GitHub Release URL
     needs: build
     permissions:
       contents: write
     uses: ./.github/workflows/upload-artifact-to-release.yml
     with:
-      artifact-name: 'built-plugin'
+      artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
       pr-number: ${{ github.event.pull_request.number }}
       commit-sha: ${{ github.sha }}
       # Number of artifacts to keep for this PR (0 = unlimited)
@@ -51,7 +51,7 @@ jobs:
 
   create-blueprint:
     name: Create Playground Blueprint
-    needs: upload-artifact
+    needs: expose-build-artifact-publicly
     runs-on: ubuntu-latest
     outputs:
       blueprint: ${{ steps.blueprint.outputs.result }}
@@ -72,7 +72,7 @@ jobs:
                   "step": "installPlugin",
                   "pluginData": {
                     "resource": "url",
-                    "url": "${{ needs.upload-artifact.outputs.artifact-url }}"
+                    "url": "${{ needs.expose-build-artifact-publicly.outputs.artifact-url }}"
                   },
                   "options": {
                     "activate": true
