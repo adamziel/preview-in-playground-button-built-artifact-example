@@ -1,69 +1,81 @@
 name: Upload Artifact to Release with Cleanup
-description: |
-  Upload artifacts to a single GitHub Release (with automatic cleanup)
 
-  This workflows enables previewing builds in WordPress Playground by
-  exposing your selected CI build artifact on a public URL. It uses a
-  single GitHub release as a central data store for artifacts from all
-  PRs. It also automatically cleans up old artifacts.
-  
-  ## Prerequisite
-
-    Create a dedicated release first. It's a pre-release and won't be
-    displayed in the main releases list:
-
-    ```bash
-    gh release create ci-artifacts --title "CI Artifacts" --prerelease
-    ```
-
-  ## Usage example (remove the backslashes):
-  
-    jobs:
-      # Build your artifact first
-      build:
-        runs-on: ubuntu-latest
-
-        # Expose the built artifact path to the upload job
-        outputs:
-          artifact-path: ${\{ steps.build.outputs.path }}
-        steps:
-          - uses: actions/checkout@v4
-          - name: Build
-            id: build
-            run: |
-              npm run build
-              zip -r plugin.zip dist/
-              echo "path=$PWD/plugin.zip" >> $GITHUB_OUTPUT
-  
-      upload:
-        # Wait for the build job to finish
-        needs: build
-        permissions:
-          contents: write # Required!
-        uses: ./.github/workflows/upload-artifact-to-release.yml
-
-        # Pass the built artifact details to the upload job
-        with:
-          # Remove those backslashes in your workflow:
-          artifact-path: ${\{ needs.build.outputs.artifact-path }}
-          pr-number: ${\{ github.event.pull_request.number }}
-          commit-sha: ${\{ github.sha }}
-          artifacts-to-keep: '2' # Only store the 2 most recent artifacts for
-                                 # every PR. Optional. Defaults to 2.
+# ============================================================================
+# REUSABLE WORKFLOW: Upload artifacts to GitHub Releases with automatic cleanup
+# ============================================================================
+#
+# This workflow uploads build artifacts to a GitHub release and automatically
+# cleans up old artifacts for the same PR, keeping only the N most recent.
+#
+# USAGE EXAMPLE:
+#
+#   jobs:
+#     build:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: actions/checkout@v4
+#         - name: Build
+#           run: |
+#             npm run build
+#             zip -r plugin.zip dist/
+#         - uses: actions/upload-artifact@v4
+#           with:
+#             name: built-plugin
+#             path: plugin.zip
+#
+#     upload:
+#       needs: build
+#       permissions:
+#         contents: write  # Required!
+#       uses: ./.github/workflows/upload-artifact-to-release.yml
+#       with:
+#         artifact-name: 'built-plugin'
+#         pr-number: ${{ github.event.pull_request.number }}
+#         commit-sha: ${{ github.sha }}
+#         artifacts-to-keep: '2'  # Optional, defaults to 2
+#
+# PREREQUISITES:
+#   1. Create the release first:
+#      gh release create ci-artifacts --title "CI Artifacts" --prerelease
+#
+#   2. The calling workflow needs permissions:
+#      permissions:
+#        contents: write
+#
+# HOW IT WORKS:
+#   1. Downloads the GitHub Actions artifact from the build job
+#   2. Uploads to release with name: pr-{number}-{sha}.zip
+#   3. Gets all artifacts for this PR from the release
+#   4. Sorts by timestamp (newest first)
+#   5. Keeps N most recent, deletes the rest
+#   6. Returns public download URL
+#
+# ============================================================================
 
 on:
   workflow_call:
     inputs:
-      artifact-path:
+      artifact-name:
         description: |
-          Path to the artifact file to upload (e.g., 'dist/plugin.zip' or '$PWD/build.zip')
+          Name of the GitHub Actions artifact to download and upload to release
 
-          This should be an absolute or relative path to a zip file containing your built plugin/theme.
-          The file will be copied and renamed to: pr-{number}-{sha}.zip
+          This should match the name used in actions/upload-artifact@v4 in the build job.
+          The artifact should contain a single zip file.
 
-          Example (remove the backslash): ${\{ needs.build.outputs.artifact-path }}
+          Example: 'built-plugin' (if you used name: built-plugin in upload-artifact)
         required: true
         type: string
+
+      artifact-filename:
+        description: |
+          Filename of the zip file inside the GitHub Actions artifact (default: 'plugin.zip')
+
+          This should match the actual filename of the zip in your artifact.
+
+          Example: 'plugin.zip' or 'theme.zip'
+        required: false
+        type: string
+        default: 'plugin.zip'
 
       pr-number:
         description: |
@@ -72,7 +84,7 @@ on:
           Used to create artifacts named: pr-{THIS_NUMBER}-{sha}.zip
           Also used to find and clean up other artifacts for the same PR.
 
-          Example (remove the backslash): ${\{ github.event.pull_request.number }}
+          Example: ${{ github.event.pull_request.number }}
         required: true
         type: string
 
@@ -83,7 +95,7 @@ on:
           Used to create artifacts named: pr-{number}-{THIS_SHA}.zip
           Ensures each commit gets a unique artifact even if built multiple times.
 
-          Example (remove the backslash): ${\{ github.sha }}
+          Example: ${{ github.sha }}
         required: true
         type: string
 
@@ -151,20 +163,25 @@ jobs:
       artifact-url: ${{ steps.upload.outputs.url }}
       artifact-name: ${{ steps.upload.outputs.name }}
     steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+
       - name: Upload artifact to release
         id: upload
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr-number }}
           COMMIT_SHA: ${{ inputs.commit-sha }}
-          ARTIFACT_PATH: ${{ inputs.artifact-path }}
+          ARTIFACT_FILENAME: ${{ inputs.artifact-filename }}
           RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           # Create unique filename for this PR and commit
           ARTIFACT_NAME="pr-${PR_NUMBER}-${COMMIT_SHA}.zip"
 
-          # Copy and rename the artifact
-          cp "$ARTIFACT_PATH" "$ARTIFACT_NAME"
+          # Rename the downloaded artifact
+          mv "$ARTIFACT_FILENAME" "$ARTIFACT_NAME"
 
           # Upload to the release
           echo "Uploading $ARTIFACT_NAME to $RELEASE_TAG release..."
