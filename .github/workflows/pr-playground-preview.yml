@@ -34,12 +34,12 @@ jobs:
           path: plugin.zip
           retention-days: 1
 
-  expose-build-artifact-publicly:
+  expose-build-artifact-on-public-url:
     name: Expose Built Artifact on a Public GitHub Release URL
     needs: build
     permissions:
       contents: write
-    uses: ./.github/workflows/upload-artifact-to-release.yml
+    uses: ../../.github/workflows/expose-artifact-on-public-url.yml
     with:
       artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
       pr-number: ${{ github.event.pull_request.number }}
@@ -51,7 +51,7 @@ jobs:
 
   create-blueprint:
     name: Create Playground Blueprint
-    needs: expose-build-artifact-publicly
+    needs: expose-build-artifact-on-public-url
     runs-on: ubuntu-latest
     outputs:
       blueprint: ${{ steps.blueprint.outputs.result }}
@@ -72,7 +72,7 @@ jobs:
                   "step": "installPlugin",
                   "pluginData": {
                     "resource": "url",
-                    "url": "${{ needs.expose-build-artifact-publicly.outputs.artifact-url }}"
+                    "url": "${{ needs.expose-build-artifact-on-public-url.outputs.artifact-url }}"
                   },
                   "options": {
                     "activate": true

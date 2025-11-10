@@ -27,7 +27,7 @@ name: Upload Artifact to Release with Cleanup
 #       needs: build
 #       permissions:
 #         contents: write  # Required!
-#       uses: ./.github/workflows/upload-artifact-to-release.yml
+#       uses: ./.github/workflows/expose-artifact-on-public-url.yml
 #       with:
 #         artifact-name: 'built-plugin'
 #         pr-number: PULL_REQUEST_NUMBER
