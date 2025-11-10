@@ -8,8 +8,6 @@ jobs:
   build:
     name: Build Plugin Artifact
     runs-on: ubuntu-latest
-    outputs:
-      artifact-path: ${{ steps.build.outputs.path }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,28 +21,32 @@ jobs:
         run: npm install
 
       - name: Build plugin
-        id: build
         run: |
           npm run build
           cd dist
           zip -r ../plugin.zip .
           cd ..
-          echo "path=$PWD/plugin.zip" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifact for next job
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-plugin
+          path: plugin.zip
+          retention-days: 1
 
   upload-artifact:
     name: Upload Artifact with Cleanup
     needs: build
     permissions:
       contents: write
-    uses: adamziel/preview-in-playground-button-built-artifact-example/.github/workflows/upload-artifact-to-release.yml@main
+    uses: ./.github/workflows/upload-artifact-to-release.yml
     with:
-      artifact-path: ${{ needs.build.outputs.artifact-path }}
+      artifact-name: 'built-plugin'
       pr-number: ${{ github.event.pull_request.number }}
       commit-sha: ${{ github.sha }}
       # Number of artifacts to keep for this PR (0 = unlimited)
-      # Uses repository variable ARTIFACTS_TO_KEEP_PER_PR if set, otherwise defaults to 2
-      # To configure: Settings → Secrets and variables → Actions → Variables → New repository variable
-      artifacts-to-keep: '2'  # Change this value or use vars.ARTIFACTS_TO_KEEP_PER_PR
+      # Change this value to keep more/fewer artifacts per PR
+      artifacts-to-keep: '2'
       release-tag: 'ci-artifacts'
 
   create-blueprint:
