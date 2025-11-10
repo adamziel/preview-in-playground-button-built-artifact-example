@@ -30,8 +30,8 @@ name: Upload Artifact to Release with Cleanup
 #       uses: ./.github/workflows/upload-artifact-to-release.yml
 #       with:
 #         artifact-name: 'built-plugin'
-#         pr-number: ${{ github.event.pull_request.number }}
-#         commit-sha: ${{ github.sha }}
+#         pr-number: PULL_REQUEST_NUMBER
+#         commit-sha: COMMIT_SHA
 #         artifacts-to-keep: '2'  # Optional, defaults to 2
 #
 # PREREQUISITES:
@@ -50,6 +50,9 @@ name: Upload Artifact to Release with Cleanup
 #   5. Keeps N most recent, deletes the rest
 #   6. Returns public download URL
 #
+# For actual usage with GitHub context variables, see:
+# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions
+#
 # ============================================================================
 
 on:
@@ -62,7 +65,7 @@ on:
           This should match the name used in actions/upload-artifact@v4 in the build job.
           The artifact should contain a single zip file.
 
-          Example: 'built-plugin' (if you used name: built-plugin in upload-artifact)
+          Example: 'built-plugin'
         required: true
         type: string
 
@@ -84,7 +87,7 @@ on:
           Used to create artifacts named: pr-{THIS_NUMBER}-{sha}.zip
           Also used to find and clean up other artifacts for the same PR.
 
-          Example: ${{ github.event.pull_request.number }}
+          Pass: github.event.pull_request.number
         required: true
         type: string
 
@@ -95,7 +98,7 @@ on:
           Used to create artifacts named: pr-{number}-{THIS_SHA}.zip
           Ensures each commit gets a unique artifact even if built multiple times.
 
-          Example: ${{ github.sha }}
+          Pass: github.sha
         required: true
         type: string
 
@@ -137,20 +140,16 @@ on:
         description: |
           Public download URL for the uploaded artifact
 
-          Format: https://github.com/{owner}/{repo}/releases/download/{tag}/pr-{number}-{sha}.zip
+          Format: https://github.com/OWNER/REPO/releases/download/TAG/pr-NUMBER-SHA.zip
           This URL can be used directly in Playground blueprints or shared publicly.
-
-          Example: https://github.com/my-org/my-plugin/releases/download/ci-artifacts/pr-123-abc1234.zip
         value: ${{ jobs.upload.outputs.artifact-url }}
 
       artifact-name:
         description: |
           Filename of the uploaded artifact
 
-          Format: pr-{number}-{sha}.zip
+          Format: pr-NUMBER-SHA.zip
           Useful for logging or debugging purposes.
-
-          Example: pr-123-abc1234.zip
         value: ${{ jobs.upload.outputs.artifact-name }}
 
 jobs:
