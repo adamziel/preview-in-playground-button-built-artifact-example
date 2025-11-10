@@ -35,20 +35,20 @@ name: Upload Artifact to Release with Cleanup
 #         artifacts-to-keep: '2'  # Optional, defaults to 2
 #
 # PREREQUISITES:
-#   1. Create the release first:
-#      gh release create ci-artifacts --title "CI Artifacts" --prerelease
+#   The calling workflow needs permissions:
+#     permissions:
+#       contents: write
 #
-#   2. The calling workflow needs permissions:
-#      permissions:
-#        contents: write
+#   Note: The workflow automatically creates the ci-artifacts release if it doesn't exist.
 #
 # HOW IT WORKS:
-#   1. Downloads the GitHub Actions artifact from the build job
-#   2. Uploads to release with name: pr-{number}-{sha}.zip
-#   3. Gets all artifacts for this PR from the release
-#   4. Sorts by timestamp (newest first)
-#   5. Keeps N most recent, deletes the rest
-#   6. Returns public download URL
+#   1. Ensures the release exists (creates it if needed)
+#   2. Downloads the GitHub Actions artifact from the build job
+#   3. Uploads to release with name: pr-{number}-{sha}.zip
+#   4. Gets all artifacts for this PR from the release
+#   5. Sorts by timestamp (newest first)
+#   6. Keeps N most recent, deletes the rest
+#   7. Returns public download URL
 #
 # For actual usage with GitHub context variables, see:
 # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions
@@ -162,6 +162,24 @@ jobs:
       artifact-url: ${{ steps.upload.outputs.url }}
       artifact-name: ${{ steps.upload.outputs.name }}
     steps:
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release '$RELEASE_TAG' already exists"
+          else
+            echo "Creating release '$RELEASE_TAG'..."
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "CI Artifacts (Do Not Delete)" \
+              --notes "This release stores temporary build artifacts for PR previews." \
+              --prerelease
+            echo "Release '$RELEASE_TAG' created successfully"
+          fi
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
