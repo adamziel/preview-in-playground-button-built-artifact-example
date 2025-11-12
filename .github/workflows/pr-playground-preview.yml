@@ -39,7 +39,7 @@ jobs:
     needs: build
     permissions:
       contents: write
-    uses: WordPress/action-wp-playground-pr-preview/.github/workflows/expose-artifact-on-public-url.yml@v2.0.0-beta2
+    uses: WordPress/action-wp-playground-pr-preview/.github/workflows/expose-artifact-on-public-url.yml@v2.0.0-beta3
     with:
       artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
       pr-number: ${{ github.event.pull_request.number }}
@@ -90,7 +90,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    uses: WordPress/action-wp-playground-pr-preview@v2.0.0-beta2
+    uses: WordPress/action-wp-playground-pr-preview@v2.0.0-beta3
     with:
       mode: append-to-description
       blueprint: ${{ needs.create-blueprint.outputs.blueprint }}
