@@ -86,6 +86,7 @@ jobs:
   playground-preview:
     name: Post Playground Preview Button
     needs: create-blueprint
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
