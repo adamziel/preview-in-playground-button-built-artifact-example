@@ -93,7 +93,7 @@ jobs:
       issues: write
     steps:
       - name: Post Playground Preview Button
-        uses: WordPress/action-wp-playground-pr-preview@v2.0.0-beta9
+        uses: WordPress/action-wp-playground-pr-preview@v2.0.0-beta10
         with:
           mode: append-to-description
           blueprint: ${{ needs.create-blueprint.outputs.blueprint }}
