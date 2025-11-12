@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 add_action( 'admin_notices', function() {
     echo '<div class="notice notice-success is-dismissible">';
     echo '<p><strong>Built Artifact Demo Plugin is active!</strong></p>';
-    echo '<p>This plugin was built from source code and deployed via a GitHub Actions artifact.</p>';
+    echo '<p>This is the updated version of the plugin loaded from the Pull Request!</p>';
     echo '<p>Build timestamp: <code>' . esc_html( BUILT_ARTIFACT_DEMO_BUILD_TIME ) . '</code></p>';
     echo '</div>';
 } );
