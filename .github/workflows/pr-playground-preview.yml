@@ -37,17 +37,24 @@ jobs:
   expose-build-artifact-on-public-url:
     name: Expose Built Artifact on a Public GitHub Release URL
     needs: build
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    uses: WordPress/action-wp-playground-pr-preview/.github/workflows/expose-artifact-on-public-url.yml@v2.0.0-beta18
-    with:
-      artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
-      pr-number: ${{ github.event.pull_request.number }}
-      commit-sha: ${{ github.sha }}
-      # Number of artifacts to keep for this PR (0 = unlimited)
-      # Change this value to keep more/fewer artifacts per PR
-      artifacts-to-keep: '2'
-      release-tag: 'ci-artifacts'
+    outputs:
+      artifact-url: ${{ steps.expose.outputs.artifact-url }}
+      artifact-name: ${{ steps.expose.outputs.artifact-name }}
+    steps:
+      - name: Expose built artifact
+        id: expose
+        uses: WordPress/action-wp-playground-pr-preview/.github/workflows/expose-artifact-on-public-url.yml@v2.0.0-beta21
+        with:
+          artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          commit-sha: ${{ github.sha }}
+          # Number of artifacts to keep for this PR (0 = unlimited)
+          # Change this value to keep more/fewer artifacts per PR
+          artifacts-to-keep: '2'
+          release-tag: 'ci-artifacts'
 
   create-blueprint:
     name: Create Playground Blueprint
