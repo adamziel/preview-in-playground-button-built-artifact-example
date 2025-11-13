@@ -46,7 +46,7 @@ jobs:
     steps:
       - name: Expose built artifact
         id: expose
-        uses: WordPress/action-wp-playground-pr-preview/.github/actions/expose-artifact-on-public-url@v2.0.0-beta21
+        uses: WordPress/action-wp-playground-pr-preview/.github/actions/expose-artifact-on-public-url@v2.0.0-beta22
         with:
           artifact-name: built-plugin-${{ github.event.pull_request.number }}-${{ github.sha }}
           pr-number: ${{ github.event.pull_request.number }}
